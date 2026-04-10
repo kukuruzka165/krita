@@ -19,6 +19,7 @@
 #include "KoColorBackground.h"
 #include "KoShapeStroke.h"
 #include "KoColor.h"
+#include <KoWritingSystemUtils.h>
 
 #include "KoViewConverter.h"
 #include "kis_coordinates_converter.h"
@@ -175,7 +176,7 @@ struct Q_DECL_HIDDEN SvgTextCursor::Private {
 
                 if (m_unblockQueryUpdates) {
                     m_d->blockQueryUpdates = false;
-                    inputMethod->update(Qt::ImQueryInput);
+                    inputMethod->update(Qt::ImQueryInput | Qt::ImPreferredLanguage);
                 }
 
                 if (m_changeVisibility) {
@@ -986,10 +987,11 @@ QVariant SvgTextCursor::inputMethodQuery(Qt::InputMethodQuery query) const
         }
         break;
     //case Qt::ImFont: // not sure what this is used for, but we cannot sent out without access to properties.
+
     case Qt::ImAbsolutePosition:
     case Qt::ImCursorPosition:
         if (d->shape) {
-            return d->shape->indexForPos(d->pos);
+            return d->preEditCommand? d->shape->indexForPos(d->preEditStart): d->shape->indexForPos(d->pos);
         }
         break;
     case Qt::ImSurroundingText:
@@ -1033,7 +1035,7 @@ QVariant SvgTextCursor::inputMethodQuery(Qt::InputMethodQuery query) const
         break;
     case Qt::ImAnchorPosition:
         if (d->shape) {
-            return d->shape->indexForPos(d->anchor);
+            return d->preEditCommand? d->shape->indexForPos(d->preEditStart)+d->preEditLength: d->shape->indexForPos(d->anchor);
         }
         break;
     case Qt::ImHints:
@@ -1041,7 +1043,15 @@ QVariant SvgTextCursor::inputMethodQuery(Qt::InputMethodQuery query) const
         // but neither are implemented for anything but web platform integration
         return Qt::ImhMultiLine;
         break;
-    // case Qt::ImPreferredLanguage: // requires access to properties.
+    case Qt::ImPreferredLanguage:
+        // 2026: Currently only used by wayland.
+        if (d->shape) {
+            const QString lang = d->shape->propertiesForPos(d->pos, true).propertyOrDefault(KoSvgTextProperties::TextLanguage).toString();
+            if (!lang.isEmpty()) {
+                return KoWritingSystemUtils::localeFromBcp47Locale(KoWritingSystemUtils::parseBcp47Locale(lang));
+            }
+        }
+        break;
 #if defined(Q_OS_ANDROID) && KRITA_QT_HAS_ANDROID_INPUT_PLATFORM_DATA_SOFT_INPUT_ADJUST_NOTHING
     case Qt::ImPlatformData:
         // Platform-specific data. Qt normally only uses this on iOS, but we
